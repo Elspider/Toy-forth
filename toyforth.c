@@ -102,6 +102,7 @@ tfobj *createStringObject(char *s, size_t len){
 	tfobj *o = createObject(TFOBJ_TYPE_STR);
 	o->str.ptr = xmalloc(len);
 	memcpy(o->str.ptr,s,len);
+	o->str.ptr[len] = 0;
 	o->str.len = len;
 	return o;
 }
@@ -144,7 +145,7 @@ void dumpobj(tfobj *o){
 			printf("%s ",o->str.ptr);
 			break;
 		case TFOBJ_TYPE_STR:
-			printf("\" %s\" ",o->str.ptr);
+			printf("\"%s\" ",o->str.ptr);
 			break;
 		case TFOBJ_TYPE_LIST:
 			putchar('[');
@@ -156,7 +157,7 @@ void dumpobj(tfobj *o){
 		default: break;
 	}
 }
-/*===============Necessary function prototype==================*/
+/*===============Necessary forward declaration==================*/
 void deleteObject(tfobj *o);
 void relese(tfobj *o);
 void retain(tfobj *o);
@@ -185,6 +186,7 @@ void deleteObject(tfobj *o){
 				current = o->list.elem[j];
 				relese(current);
 			}
+			free(o->list.elem);
 			break;
 		default: break;
 	}
@@ -237,9 +239,10 @@ tfobj *listPeek(tfobj *list){
 
 /*------------Parsing Related function----------*/
 int isSymbolChar(int c){
+	if(c == 0) return 0;
 	char buf[] = "+-*/%<>=";
 	return ( 
-			(strchr(buf, c) == NULL) ||
+			(strchr(buf, c) != NULL) ||
 			 isalpha(c) );
 }
 #define MAX_INT_LEN 64
@@ -264,20 +267,24 @@ tfobj *parseNumber(tfparser *p){
 tfobj *parseList(tfparser *p){
 	char *start = ++p->p;
 	char *end;
-
-	while(p->p[0] != 0 && p->p[0] != ']')
+	int listcount = 1;
+	while(p->p[0] != 0 && listcount > 0){
 		p->p++;
+		if(p->p[0] == '[') listcount++;
+		else if(p->p[0] == ']') listcount--;
+	}
 	end = p->p;
-	if(end[0] == 0) return NULL;
-	else(p->p++);
 
-	char * buf = xmalloc((end-start+1)*sizeof(char));
-	buf[end-start] = 0;
+	if(end[0] == 0) return NULL;
+	else p->p++;
+
+	char *buf = xmalloc((end-start+1)*sizeof(char));
 	memcpy(buf, start, end - start);
+	buf[end-start] = 0;
 	tfobj *o = compile(buf);
 
-
 	free(buf);
+
 	return o;
 }
 
@@ -285,7 +292,7 @@ tfobj *parseString(tfparser *p){
 	char *start = ++p->p;
 	char *end;
 
-	while(p->p[0] != 0 && p->p[0] != '\"')
+	while(p->p[0] != 0 && p->p[0] != '"')
 		p->p++;
 	end = p->p;
 	if(end[0] == 0) return NULL;
@@ -296,7 +303,7 @@ tfobj *parseString(tfparser *p){
 	return o;
 }
 tfobj *parseSymbol(tfparser *p){
-	char *start = ++p->p;
+	char *start = p->p;
 	char *end;
 
 	while(isSymbolChar(p->p[0]))
@@ -318,8 +325,9 @@ tfobj *compile(char *prg){
 	parser.p = parser.prg = prg;
 	char *startToken;
 	tfobj *o = NULL;
+	
+
 	while(parser.p[0]){
-		o = NULL;
 		parseSpace(&parser);
 		if(parser.p[0] == 0) break;
 		startToken = parser.p;
@@ -336,13 +344,16 @@ tfobj *compile(char *prg){
 		else if(isSymbolChar(parser.p[0])){
 			o = parseSymbol(&parser);
 		}
+		else o = NULL;
 		//appending the object
 		if(o == NULL){
 			fprintf(stderr,"Sintax error at %s", startToken);
+			relese(parsed);
 			return NULL;
 		}
 		else{
 			listPush(o, parsed);
+			relese(o);
 		}
 	}
 	return parsed;
@@ -377,10 +388,12 @@ int main(int argc, char **argv){
 #endif
 	tfobj *prg = compile(prgtext);
 	if(prg == NULL){
-		fprintf(stderr, "error while complinig the program\n");
+		fprintf(stderr, "error while compiling the program\n");
 			return 1;
 	}
+	free(prgtext);
 	dumpobj(prg);
 	putchar('\n');
+	relese(prg);
 	return 0;
 }
