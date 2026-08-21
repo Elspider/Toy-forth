@@ -18,7 +18,8 @@
 /*definition os standard error*/
 #define TFERR_OK 0
 #define TFERR_UNDERFLOW 1
-#define TFERR_TIPE 2
+#define TFERR_TYPE 2
+#define TFERR_NOFUNC 3
 /*--------------------Basic Data structures*------------------------------*/
 typedef struct tfobj tfobj;
 typedef struct tfparser tfparser;
@@ -51,6 +52,7 @@ typedef struct tfparser{
 	char *p; //the next token to parse
 }tfparser;
 typedef struct funcEntry{
+	tfobj* name;
 	int type;//F_TYPE_* 
 	union{
 		tfobj *userList;
@@ -65,14 +67,15 @@ typedef struct funcTab{
 //Context of execution
 typedef struct tfctx{
 	tfobj *stack;
-	FuncTab *func_table;
+	FuncTab func_table;
+	int error;
 }tfctx;
 
 /*--------------------Allocation wrappers------------------------------*/
 
 void *xmalloc(size_t size){
 	void *ptr = malloc(size);
-	if(ptr == NULL){
+	if(ptr == NULL && size != 0){
 		fprintf(stderr, "Out of memory allocating %zu Bytes\n",size);
 		exit(1);
 	}
@@ -80,7 +83,7 @@ void *xmalloc(size_t size){
 }
 void *xrealloc(void * old, size_t size){
 	void *ptr = realloc(old, size);
-	if(ptr == NULL){
+	if(ptr == NULL && size != 0){
 		fprintf(stderr, "Out of memory reallocating %zu Bytes\n",size);
 		exit(1);
 	}
@@ -165,6 +168,11 @@ int isSymbolChar(int c);
 /*Turn a null-terminated buffer into a List
  * object containing the list*/
 tfobj *compile(char *prg);
+int executeList(tfctx *ctx, tfobj *prg);
+
+/*-----TF function forwars declaration -------*/
+int basicMathFunctions(tfctx *ctx, tfobj *name);
+
 
 /*===============Function Implementation=======================*/
 /*-------------Memory managment function---------*/
@@ -203,12 +211,34 @@ void relese(tfobj *o){
 	if(o->refcount == 0) deleteObject(o);
 }
 /*------------String Object Function-----------*/
+
+/*This function use memcmp on the string
+ * of 2 object, and return 0 if two string object 
+ * have the same string, 1 if the first string is greather
+ * than the second according to memcmp() and -1 if 
+ * the second is. 
+ * If one string is an exact prefixe of another, meaning it is 
+ * shorter but matching for all its character, it is considered
+ * lesser than.
+ * WARNING: Function does not check object type*/
+int stringObjCompare(tfobj *obj1, tfobj *obj2){
+	int minlen = ( obj1->str.len < obj2->str.len ) ? obj1->str.len : obj2->str.len;
+	int res = memcmp(obj1->str.ptr, obj2->str.ptr, minlen);
+	if(res > 0) return  1;
+	else if( res < 0) return -1;
+	else{
+		res = (obj1->str.len > obj2->str.len ) ? 1 : -1;
+	}
+	return res;
+}
+
 /* -----------List object function-------------*/
 
 /*Append an element to the list and hence
  * increase the reference count of the object */
 void listPush(tfobj *o, tfobj *list){
-	assert(list != NULL && list->type == TFOBJ_TYPE_LIST );
+	assert(list != NULL);
+	assert(list->type == TFOBJ_TYPE_LIST );
 	if(list->list.max_capacity <= list->list.len){
 		list->list.max_capacity = (list->list.max_capacity == 0) ? 1 : list->list.max_capacity * 2;
 		list->list.elem = xrealloc(list->list.elem, list->list.max_capacity * sizeof(tfobj*));
@@ -220,11 +250,12 @@ void listPush(tfobj *o, tfobj *list){
 /* Pop out the last element from the list*/
 tfobj *listPop(tfobj *list){
 	tfobj *o;
+	assert(list->list.len > 0);
 	list->list.len--;
 	o = list->list.elem[list->list.len];
 	list->list.elem[list->list.len] = NULL;
 	//Check if list is mostly empty
-	if(list->list.max_capacity > 4 * list->list.len)
+	if(list->list.max_capacity > 4 * list->list.len && list->list.len != 0)
 		list->list.elem = xrealloc(list->list.elem , sizeof(tfobj*) * list->list.len);
 	return o;
 }
@@ -358,9 +389,168 @@ tfobj *compile(char *prg){
 	}
 	return parsed;
 }
-/*==========Basic Function==============*/
+/*========Basic Functions managment=========*/
+FuncEntry *getFunctionEntry(tfctx *ctx, tfobj *name){
+	assert(name->type == TFOBJ_TYPE_SYMBOL || name->type == TFOBJ_TYPE_STR);
+	for(size_t j = 0; j < ctx->func_table.len; j++){
+		if(stringObjCompare(name, ctx->func_table.elem[j]->name))
+			return ctx->func_table.elem[j];
+	}
+	return NULL;
+}
+void registerFunction(tfctx *ctx, FuncEntry *fe){
+	ctx->func_table.len++;
+	ctx->func_table.elem = xrealloc(ctx->func_table.elem, (ctx->func_table.len) * sizeof(FuncEntry*));
+	ctx->func_table.elem[ctx->func_table.len - 1] = fe;
+}
+
+void registerCFunction(tfctx *ctx, char *name, int (*callback)(tfctx *ctx, tfobj *name)){
+	tfobj *oname = createSymbolObject(name, strlen(name));
+	FuncEntry *fe = xmalloc(sizeof(FuncEntry));
+	fe->name = oname;
+	fe->type = F_TYPE_NATIVE;
+	fe->callback = callback;
+	registerFunction(ctx, fe);
+}
+/*==============Context and execution===========*/
+
+
+/*-------Context related function---------*/
+tfctx *createContext(){
+	tfctx *ctx = xmalloc(sizeof(tfctx));
+	ctx->stack = createListObject();
+	ctx->func_table.len = 0;
+	ctx->func_table.elem = NULL;
+	ctx->error = TFERR_OK;
+	registerCFunction(ctx, "+", basicMathFunctions);
+	registerCFunction(ctx, "-", basicMathFunctions);
+	registerCFunction(ctx, "*", basicMathFunctions);
+	registerCFunction(ctx, "/", basicMathFunctions);
+	registerCFunction(ctx, "%", basicMathFunctions);
+	return ctx;
+}
+void deleteContext(tfctx *ctx){
+	FuncEntry *curr;
+	relese(ctx->stack);
+	for(size_t j = 0; j < ctx->func_table.len; j++){
+		curr = ctx->func_table.elem[j];
+		switch (curr->type) {
+			case F_TYPE_USER:
+				relese(curr->userList);
+				break;
+			case F_TYPE_NATIVE:
+				break;
+		}
+		free(curr);
+	}
+	free(ctx);
+}
+/*return the last element from the context
+ * and erase it from the stack*/
+tfobj *ctxStackPop(tfctx *ctx, int type){
+	tfobj *o = listPop(ctx->stack);
+	if(o->type != type) ctx->error = TFERR_TYPE;
+	return o;
+}
+/*return the last element from the context
+ * without erasing it from the stack*/
+tfobj *ctxStackPeek(tfctx *ctx, int type){
+	tfobj *o = listPeek(ctx->stack);
+	if(o->type != type) ctx->error = TFERR_TYPE;
+	return o;
+
+}
+void ctxStackPush(tfctx *ctx, tfobj *o){
+	listPush(o, ctx->stack);
+}
 /*-----------Standard library------------*/
+int basicMathFunctions(tfctx *ctx, tfobj *name){
+	int res;
+	tfobj *b = ctxStackPop(ctx, TFOBJ_TYPE_INT);
+	tfobj *a = ctxStackPop(ctx, TFOBJ_TYPE_INT);
+	if(ctx->error != TFERR_OK) goto cleanup;
+	switch(name->str.ptr[0]){
+		case '+': res = a->num + b->num; break;
+		case '-': res = a->num - b->num; break;
+		case '*': res = a->num * b->num; break;
+		case '/': res = a->num / b->num; break;
+		case '%': res = a->num % b->num; break;
+	}
+	tfobj *o = createIntObject(res);
+	ctxStackPush(ctx, o);
+
+//TODO: Maybe adding an option to sum string?
+cleanup:
+	relese(a);
+	relese(b);
+	return ctx->error;
+}
 /*------------Control structure----------*/
+
+/*----------Execution related function------------*/
+
+void executeSymbol(tfctx *ctx, tfobj *name){
+	FuncEntry *fe = getFunctionEntry(ctx, name);
+	if(fe == NULL){
+		ctx->error = TFERR_NOFUNC;
+	}
+
+	switch(fe->type){
+		case F_TYPE_NATIVE:
+			ctx->error = fe->callback(ctx, name);
+			break;
+		case F_TYPE_USER:
+			ctx->error = executeList(ctx, fe->userList);
+			break;
+	}
+}
+
+int executeList(tfctx *ctx, tfobj *list){
+	tfobj *word;
+	tfobj *sublist;
+	tfctx *subctx;
+	for(size_t j = 0; j < list->list.len; j++){
+		word = list->list.elem[j];
+		switch (word->type) {
+			case TFOBJ_TYPE_SYMBOL:
+				executeSymbol(ctx, word);
+				break;
+			case TFOBJ_TYPE_LIST:
+				subctx = createSubContext(ctx);
+				executeList(subctx, sublist);
+				ctxStackPush(ctx, sublist);
+			default:
+				ctxStackPush(ctx, word);
+				break;
+		}
+		if(ctx->error != TFERR_OK){
+			//TODO: ADD error Location here
+			return ctx->error;
+		}
+	}
+	return TFERR_OK;
+}
+/*This function execute the program and print
+ * an output if there are some error*/
+void executeProgram(tfctx *ctx, tfobj *prg){
+	executeList(ctx, prg);
+	switch (ctx->error) {
+		case TFERR_NOFUNC:
+			fprintf(stderr, "Error: No matching function found\n");
+			break;
+		case TFERR_TYPE:
+			fprintf(stderr,"Error: Wrong type for function \n"); 
+			break;
+		case TFERR_UNDERFLOW:
+			fprintf(stderr, "Error: Missing argumen for function \n");
+			break;
+		case TFERR_OK:
+			printf("Execution of the program did not produce any error\n");
+			break;
+		default: break;
+	}
+	return;
+}
 /*=======Main========*/
 int main(int argc, char **argv){
 	if(argc !=2){
@@ -394,6 +584,13 @@ int main(int argc, char **argv){
 	free(prgtext);
 	dumpobj(prg);
 	putchar('\n');
+	
+	printf("Program after execution\n");
+	tfctx *ctx = createContext();
+	executeProgram(ctx, prg);
+	dumpobj(ctx->stack);
+	putchar('\n');
+	deleteContext(ctx);
 	relese(prg);
 	return 0;
 }
