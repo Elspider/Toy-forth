@@ -168,10 +168,13 @@ int isSymbolChar(int c);
 /*Turn a null-terminated buffer into a List
  * object containing the list*/
 tfobj *compile(char *prg);
+/*Execute all simbol in the list, and collapse all 
+ * list with just an element contained to the element itself*/
 int executeList(tfctx *ctx, tfobj *prg);
 
 /*-----TF function forwars declaration -------*/
 int basicMathFunctions(tfctx *ctx, tfobj *name);
+int executeListInContext(tfctx *ctx, tfobj *name);
 
 
 /*===============Function Implementation=======================*/
@@ -227,7 +230,9 @@ int stringObjCompare(tfobj *obj1, tfobj *obj2){
 	if(res > 0) return  1;
 	else if( res < 0) return -1;
 	else{
-		res = (obj1->str.len > obj2->str.len ) ? 1 : -1;
+		if(obj1->str.len != obj2->str.len){
+			res = (obj1->str.len > obj2->str.len ) ? 1 : -1;
+		}
 	}
 	return res;
 }
@@ -393,24 +398,38 @@ tfobj *compile(char *prg){
 FuncEntry *getFunctionEntry(tfctx *ctx, tfobj *name){
 	assert(name->type == TFOBJ_TYPE_SYMBOL || name->type == TFOBJ_TYPE_STR);
 	for(size_t j = 0; j < ctx->func_table.len; j++){
-		if(stringObjCompare(name, ctx->func_table.elem[j]->name))
+		if(stringObjCompare(name, ctx->func_table.elem[j]->name) == 0){
 			return ctx->func_table.elem[j];
+		}
 	}
 	return NULL;
 }
-void registerFunction(tfctx *ctx, FuncEntry *fe){
+/*Push in the functio table a new function entry*/
+FuncEntry *registerFunction(tfctx *ctx, tfobj *oname, int type){
+	FuncEntry *fe = xmalloc(sizeof(FuncEntry));
+	fe->name = oname;
+	retain(oname);
+	fe->type = type;
 	ctx->func_table.len++;
 	ctx->func_table.elem = xrealloc(ctx->func_table.elem, (ctx->func_table.len) * sizeof(FuncEntry*));
 	ctx->func_table.elem[ctx->func_table.len - 1] = fe;
+	return fe;
 }
 
 void registerCFunction(tfctx *ctx, char *name, int (*callback)(tfctx *ctx, tfobj *name)){
 	tfobj *oname = createSymbolObject(name, strlen(name));
-	FuncEntry *fe = xmalloc(sizeof(FuncEntry));
-	fe->name = oname;
-	fe->type = F_TYPE_NATIVE;
+	FuncEntry *fe = getFunctionEntry(ctx, oname);
+	if(fe != NULL){
+		//Overwriting other function
+		if (fe->type == F_TYPE_USER) {
+			relese(fe->userList);
+			fe->userList = NULL;
+		}
+	}else{
+		fe = registerFunction(ctx, oname, F_TYPE_NATIVE);
+	}
 	fe->callback = callback;
-	registerFunction(ctx, fe);
+	relese(oname);
 }
 /*==============Context and execution===========*/
 
@@ -427,6 +446,7 @@ tfctx *createContext(){
 	registerCFunction(ctx, "*", basicMathFunctions);
 	registerCFunction(ctx, "/", basicMathFunctions);
 	registerCFunction(ctx, "%", basicMathFunctions);
+	registerCFunction(ctx, "exec", executeListInContext);
 	return ctx;
 }
 void deleteContext(tfctx *ctx){
@@ -446,10 +466,11 @@ void deleteContext(tfctx *ctx){
 	free(ctx);
 }
 /*return the last element from the context
- * and erase it from the stack*/
+ * and erase it from the stack, and increse 
+ * the reference count*/
 tfobj *ctxStackPop(tfctx *ctx, int type){
 	tfobj *o = listPop(ctx->stack);
-	if(o->type != type) ctx->error = TFERR_TYPE;
+	if(o->type != type) {ctx->error = TFERR_TYPE; printf("error popping: %d, expected %d\n", o->type, type);}
 	return o;
 }
 /*return the last element from the context
@@ -463,26 +484,37 @@ tfobj *ctxStackPeek(tfctx *ctx, int type){
 void ctxStackPush(tfctx *ctx, tfobj *o){
 	listPush(o, ctx->stack);
 }
+
 /*-----------Standard library------------*/
 int basicMathFunctions(tfctx *ctx, tfobj *name){
 	int res;
 	tfobj *b = ctxStackPop(ctx, TFOBJ_TYPE_INT);
 	tfobj *a = ctxStackPop(ctx, TFOBJ_TYPE_INT);
-	if(ctx->error != TFERR_OK) goto cleanup;
-	switch(name->str.ptr[0]){
-		case '+': res = a->num + b->num; break;
-		case '-': res = a->num - b->num; break;
-		case '*': res = a->num * b->num; break;
-		case '/': res = a->num / b->num; break;
-		case '%': res = a->num % b->num; break;
+	if(ctx->error == TFERR_OK){
+		switch(name->str.ptr[0]){
+			case '+': res = a->num + b->num; break;
+			case '-': res = a->num - b->num; break;
+			case '*': res = a->num * b->num; break;
+			case '/': res = a->num / b->num; break;
+			case '%': res = a->num % b->num; break;
+		}
+		tfobj *o = createIntObject(res);
+		ctxStackPush(ctx, o);
+		relese(o);
 	}
-	tfobj *o = createIntObject(res);
-	ctxStackPush(ctx, o);
 
 //TODO: Maybe adding an option to sum string?
-cleanup:
 	relese(a);
 	relese(b);
+	return ctx->error;
+}
+
+int executeListInContext(tfctx *ctx, tfobj *name){
+	tfobj *list = ctxStackPop(ctx, TFOBJ_TYPE_LIST);
+	if(ctx->error == TFERR_OK){
+		executeList(ctx, list);
+	}
+	relese(list);
 	return ctx->error;
 }
 /*------------Control structure----------*/
@@ -490,6 +522,7 @@ cleanup:
 /*----------Execution related function------------*/
 
 void executeSymbol(tfctx *ctx, tfobj *name){
+	printf("Exec of %s\n ",name->str.ptr);
 	FuncEntry *fe = getFunctionEntry(ctx, name);
 	if(fe == NULL){
 		ctx->error = TFERR_NOFUNC;
@@ -503,22 +536,22 @@ void executeSymbol(tfctx *ctx, tfobj *name){
 			ctx->error = executeList(ctx, fe->userList);
 			break;
 	}
+	printf("Matching: %s\n", fe->name->str.ptr);
 }
 
 int executeList(tfctx *ctx, tfobj *list){
 	tfobj *word;
-	tfobj *sublist;
-	tfctx *subctx;
 	for(size_t j = 0; j < list->list.len; j++){
 		word = list->list.elem[j];
+#ifdef debug
+		printf("parsing :");
+		dumpobj(word);
+		putchar('\n');
+#endif
 		switch (word->type) {
 			case TFOBJ_TYPE_SYMBOL:
 				executeSymbol(ctx, word);
 				break;
-			case TFOBJ_TYPE_LIST:
-				subctx = createSubContext(ctx);
-				executeList(subctx, sublist);
-				ctxStackPush(ctx, sublist);
 			default:
 				ctxStackPush(ctx, word);
 				break;
@@ -584,13 +617,14 @@ int main(int argc, char **argv){
 	free(prgtext);
 	dumpobj(prg);
 	putchar('\n');
-	
-	printf("Program after execution\n");
+
 	tfctx *ctx = createContext();
 	executeProgram(ctx, prg);
+	printf("Program after execution\n");
 	dumpobj(ctx->stack);
 	putchar('\n');
-	deleteContext(ctx);
+
 	relese(prg);
+	deleteContext(ctx);
 	return 0;
 }
