@@ -175,7 +175,15 @@ int executeList(tfctx *ctx, tfobj *prg);
 /*-----TF function forwars declaration -------*/
 int basicMathFunctions(tfctx *ctx, tfobj *name);
 int executeListInContext(tfctx *ctx, tfobj *name);
+/*If statment take 2 list from the stack, 
+ * And execute one before the if is the third element
+ * from the stack is true, the second last if it is false.
+ * Also int type are suppoted other than bool, and they 
+ * are threated ast std c where 0 == FALSE and non 0 == TRUE
+ * */
+int ifStatement(tfctx *ctx, tfobj *name);
 
+int basicMathComparision(tfctx *ctx, tfobj *name);
 
 /*===============Function Implementation=======================*/
 /*-------------Memory managment function---------*/
@@ -446,6 +454,12 @@ tfctx *createContext(){
 	registerCFunction(ctx, "*", basicMathFunctions);
 	registerCFunction(ctx, "/", basicMathFunctions);
 	registerCFunction(ctx, "%", basicMathFunctions);
+	registerCFunction(ctx, "=", basicMathComparision);
+	registerCFunction(ctx, ">", basicMathComparision);
+	registerCFunction(ctx, "<", basicMathComparision);
+	registerCFunction(ctx, ">=", basicMathComparision);
+	registerCFunction(ctx, "<=", basicMathComparision);
+	registerCFunction(ctx, "if", ifStatement);
 	registerCFunction(ctx, "exec", executeListInContext);
 	return ctx;
 }
@@ -484,8 +498,20 @@ void ctxStackPush(tfctx *ctx, tfobj *o){
 }
 
 /*-----------Standard library------------*/
+/*check the number of argument in a stack,
+ * return 0 if there aren't at least N argument, 
+ * 1 if there are*/
+int checkStackLen(tfctx *ctx, int N){
+	if(ctx->stack->list.len >= N) return 1;
+	else return 0;
+}
+
 int basicMathFunctions(tfctx *ctx, tfobj *name){
 	int res;
+	if(!checkStackLen(ctx, 2)){
+		ctx->error = TFERR_UNDERFLOW;
+		return ctx->error;
+	}
 	tfobj *b = ctxStackPop(ctx, TFOBJ_TYPE_INT);
 	tfobj *a = ctxStackPop(ctx, TFOBJ_TYPE_INT);
 	if(ctx->error == TFERR_OK){
@@ -508,6 +534,12 @@ int basicMathFunctions(tfctx *ctx, tfobj *name){
 }
 
 int executeListInContext(tfctx *ctx, tfobj *name){
+
+	if(!checkStackLen(ctx, 1)){
+		ctx->error = TFERR_UNDERFLOW;
+		return ctx->error;
+	}
+
 	tfobj *list = ctxStackPop(ctx, TFOBJ_TYPE_LIST);
 	if(ctx->error == TFERR_OK){
 		executeList(ctx, list);
@@ -515,8 +547,87 @@ int executeListInContext(tfctx *ctx, tfobj *name){
 	relese(list);
 	return ctx->error;
 }
-/*------------Control structure----------*/
 
+int basicMathComparision(tfctx *ctx, tfobj *name){
+	int res;
+	if(!checkStackLen(ctx, 2)){
+		ctx->error = TFERR_UNDERFLOW;
+		return ctx->error;
+	}
+
+	tfobj *b = ctxStackPop(ctx, TFOBJ_TYPE_INT);
+	tfobj *a = ctxStackPop(ctx, TFOBJ_TYPE_INT);
+	//change simbol in case of <, to simplify cases
+	if(ctx->error == TFERR_OK){
+		if(name->str.ptr[0] == '<'){
+			tfobj *temp = a;
+			a = b;
+			b = temp;
+			name->str.ptr[0] = '>';
+		}
+		switch(name->str.ptr[0]){
+			case '=': res = a->num == b->num; break;
+			case '>':
+				switch (name->str.ptr[1]) {
+					case '=': res = a->num >= b->num; break;
+					case 0: res = a->num > b->num; break;
+					default: break;
+				}
+			default: break;
+		}
+	}
+//String comparing, by using the function 
+	else if (a->type == TFOBJ_TYPE_STR && b->type == TFOBJ_TYPE_STR){
+		ctx->error = TFERR_OK;
+		int value = stringObjCompare(a, b);
+		res = 0;
+		if(name->str.ptr[0] == '>'){
+			if(value == 1) res = 1;
+		}
+		if(name->str.ptr[0] == '<'){
+			if(value == -1) res = 1;
+		}
+		if(name->str.ptr[0] == '=' || name->str.ptr[1] == '='){
+			if(value == 0) res = 1;
+		}
+	}
+	if(ctx->error == TFERR_OK){
+		tfobj *o = createBoolObject(res);
+		ctxStackPush(ctx, o);
+		relese(o);
+	}
+	relese(a);
+	relese(b);
+	return ctx->error;
+
+}
+/*------------Control structure----------*/
+/*If statment take 2 list from the stack, 
+ * And execute one before the if is the third element
+ * from the stack is true, the second last if it is false.
+ * Also int type are suppoted other than bool, and they 
+ * are threated ast std c where 0 == FALSE and non 0 == TRUE
+ * */
+int ifStatement(tfctx *ctx, tfobj *name){
+if(!checkStackLen(ctx, 3)){
+		ctx->error = TFERR_UNDERFLOW;
+		return ctx->error;
+	}
+
+	tfobj * truestat = ctxStackPop(ctx, TFOBJ_TYPE_LIST);
+	tfobj * falsestat = ctxStackPop(ctx, TFOBJ_TYPE_LIST);
+	if(ctx->error == TFERR_OK){
+		tfobj * statment = ctxStackPop(ctx, TFOBJ_TYPE_BOOL);
+		//Adding possibility for int type
+		if(statment->type == TFOBJ_TYPE_INT) ctx->error = TFERR_OK;
+		if(statment->num) executeList(ctx, truestat);
+		else executeList(ctx, falsestat);
+		relese(statment);
+	}
+	relese(truestat);
+	relese(falsestat);
+	return ctx->error;
+}
 /*----------Execution related function------------*/
 
 void executeSymbol(tfctx *ctx, tfobj *name){
