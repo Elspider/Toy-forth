@@ -5,7 +5,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <assert.h>
-#define debug
+//#define debug
 /*Definition of object type*/
 #define TFOBJ_TYPE_INT 0
 #define TFOBJ_TYPE_STR 1
@@ -520,7 +520,6 @@ int executeListInContext(tfctx *ctx, tfobj *name){
 /*----------Execution related function------------*/
 
 void executeSymbol(tfctx *ctx, tfobj *name){
-	printf("Exec of %s\n ",name->str.ptr);
 	FuncEntry *fe = getFunctionEntry(ctx, name);
 	if(fe == NULL){
 		ctx->error = TFERR_NOFUNC;
@@ -534,7 +533,6 @@ void executeSymbol(tfctx *ctx, tfobj *name){
 			ctx->error = executeList(ctx, fe->userList);
 			break;
 	}
-	printf("Matching: %s\n", fe->name->str.ptr);
 }
 
 int executeList(tfctx *ctx, tfobj *list){
@@ -622,9 +620,7 @@ int main(int argc, char **argv){
 	dumpobj(ctx->stack);
 	putchar('\n');
 
-		printf("Remainng %zu\n", ctx->func_table.len);
 	relese(prg);
 	deleteContext(ctx);
-	printf("Remainng %zu\n", ctx->func_table.len);
 	return 0;
 }
