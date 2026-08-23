@@ -308,8 +308,10 @@ tfobj *parseNumber(tfparser *p){
 	tfobj *o = createIntObject(num);
 	return o;
 }
+/*Parse a list, assuming the first char of
+ * the parser is a '['*/
 tfobj *parseList(tfparser *p){
-	char *start = ++p->p;
+	char *start = p->p + 1 ; //assume it is '['
 	char *end;
 	int listcount = 1;
 	while(p->p[0] != 0 && listcount > 0){
@@ -501,7 +503,7 @@ void ctxStackPush(tfctx *ctx, tfobj *o){
 /*check the number of argument in a stack,
  * return 0 if there aren't at least N argument, 
  * 1 if there are*/
-int checkStackLen(tfctx *ctx, int N){
+int checkStackLen(tfctx *ctx, size_t N){
 	if(ctx->stack->list.len >= N) return 1;
 	else return 0;
 }
