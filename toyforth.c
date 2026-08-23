@@ -452,17 +452,15 @@ tfctx *createContext(){
 void deleteContext(tfctx *ctx){
 	FuncEntry *curr;
 	relese(ctx->stack);
+	ctx->stack = NULL;
 	for(size_t j = 0; j < ctx->func_table.len; j++){
 		curr = ctx->func_table.elem[j];
-		switch (curr->type) {
-			case F_TYPE_USER:
-				relese(curr->userList);
-				break;
-			case F_TYPE_NATIVE:
-				break;
-		}
+		if(curr->type == F_TYPE_USER)
+			relese(curr->userList);
+		relese(curr->name);
 		free(curr);
 	}
+	free(ctx->func_table.elem);
 	free(ctx);
 }
 /*return the last element from the context
@@ -624,7 +622,9 @@ int main(int argc, char **argv){
 	dumpobj(ctx->stack);
 	putchar('\n');
 
+		printf("Remainng %zu\n", ctx->func_table.len);
 	relese(prg);
 	deleteContext(ctx);
+	printf("Remainng %zu\n", ctx->func_table.len);
 	return 0;
 }
