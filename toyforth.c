@@ -183,6 +183,8 @@ int executeListInContext(tfctx *ctx, tfobj *name);
  * */
 int ifStatement(tfctx *ctx, tfobj *name);
 
+/*Push in the list the last element in the stack and increase his refcount*/
+int duplication(tfctx *ctx, tfobj *name);
 int basicMathComparision(tfctx *ctx, tfobj *name);
 
 /*===============Function Implementation=======================*/
@@ -463,6 +465,7 @@ tfctx *createContext(){
 	registerCFunction(ctx, "<=", basicMathComparision);
 	registerCFunction(ctx, "if", ifStatement);
 	registerCFunction(ctx, "exec", executeListInContext);
+	registerCFunction(ctx, "dup", duplication);
 	return ctx;
 }
 void deleteContext(tfctx *ctx){
@@ -603,7 +606,14 @@ int basicMathComparision(tfctx *ctx, tfobj *name){
 	return ctx->error;
 
 }
+int duplication(tfctx *ctx, tfobj *name){
+	tfobj *o = listPeek(ctx->stack);
+	listPush(o, ctx->stack);
+	return ctx->error;
+}
+
 /*------------Control structure----------*/
+
 /*If statment take 2 list from the stack, 
  * And execute one before the if is the third element
  * from the stack is true, the second last if it is false.
