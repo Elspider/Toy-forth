@@ -1,6 +1,8 @@
 # ToyForth
 
-ToyForth is a custom, stack-based concatenative programming language and interpreter written entirely in C. It is designed as an educational "toy compiler" project to explore core computer science concepts such as dynamic memory management, parsing, execution contexts, and language design.
+ToyForth is a minimal, concatenative, stack-based toy programming language and interpreter written in C. It is designed as an educational project to explore memory management (reference counting), compiler architecture, and the mechanics of stack-based execution.
+
+Unlike traditional Forth, ToyForth heavily relies on lists `[ ... ]` and a purely functional approach to defining structures and user-functions, resembling a mix between Forth and PostScript.
 
 ## 🎯 Project Goals
 
@@ -13,32 +15,96 @@ ToyForth is a custom, stack-based concatenative programming language and interpr
 
 ToyForth uses postfix notation (Reverse Polish Notation), where operands precede their operators. The language heavily utilizes lists `[ ... ]` to encapsulate code blocks for control flow and function definitions.
 
-### Basic Data Types
-*   **Integers:** `10`, `-5`
-*   **Strings:** `"hello"`
-*   **Booleans:** Handled natively or as integers (`0` is False, non-zero is True)
-*   **Lists:** `[ 1 2 + ]` (an array of objects/tokens)
+## Features
 
-### Standard Library
-*   **Math & Logic:** `+`, `-`, `*`, `/`, `%`, `=`, `>`, `<`, `>=`, `<=`
-*   **Stack Manipulation:** `dup` (duplicates the top element)
-*   **I/O:** `print` (prints the top integer), `sprint` (prints the entire stack state)
-*   **Execution:** `exec` (pops a list from the stack and executes its contents)
+* **Stack-Based Execution**: All operations pop arguments from a global stack and push their results back onto it.
+* **Reference Counting**: Robust memory management under the hood for dynamic objects (strings, lists).
+* **Dynamic Typing**: Supports Integers, Booleans, Strings, Lists, and executable Symbols.
+* **Custom User Functions**: Define your own operations at runtime using lists.
 
-### Control Flow (IF Statement)
-Unlike traditional Forth, ToyForth uses a more functional approach for conditionals. The `if` keyword expects a boolean (or integer) and two lists on the stack.
-```text
-10 5 > [ "10 is greater" print ] [ "5 is greater" print ] if
+## Building and Running
+
+You can compile the interpreter using `gcc` or via the provided Makefile:
+
+```bash
+make toyforth.exe
 
 ```
 
-### User-Defined Functions (def)
+To run a ToyForth program, pass the source file as an argument:
 
-Functions are defined by pushing a list of instructions, followed by a string representing the function name, and calling `def`.
+```bash
+./toyforth.exe my_program.tf
+```
 
-```text
-[ dup * ] "square" def
-5 square sprint  // Output: [25]
+## Language Syntax & Primitives
+
+ToyForth uses **Postfix (Reverse Polish) Notation**. You push operands onto the stack first, followed by the operator.
+
+### Data Types
+
+- Integers: 42, -10
+- Strings: "Hello World"
+- Booleans: Produced by comparison operators. (Internally True / False).
+- Lists: [ 1 2 + ] (Used for code blocks and data structures).
+- Symbols: +, dup, print (Executable words).
+
+### Basic Math & Comparison
+
+The interpreter supports standard integer arithmetic and comparison.
+
+- Math: +, -, \*, /, %Example: 10 5 - (Leaves 5 on the stack).
+- Comparison: =, >, <, >=, <=Example: 10 10 = (Leaves True on the stack).Note: You can also compare strings using these operators!
+
+### Stack Manipulation & I/O
+
+- dup: Duplicates the top element of the stack.
+- print: Pops and prints the top integer object.
+- sprint: Prints the entire current state of the stack (useful for debugging).
+- exec: Pops a list from the stack and executes its contents immediately.
+
+## Control Flow (if)
+
+The `if` statement in ToyForth expects three elements on the stack in the following order:
+
+1. A boolean condition (or integer).
+2. The list to execute if the condition is False.
+3. The list to execute if the condition is True (Top of the stack).
+
+**Syntax:**
+
+```plaintext
+<condition> [ false_branch ] [ true_branch ] if
+
+```
+
+**Example:**
+
+```plaintext
+10 5 > [ "Less" sprint ] [ "Greater" sprint ] if
+
+```
+
+## Defining User Functions (def)
+
+To keep the parser clean, ToyForth defines functions purely via stack operations instead of special keywords like `:` and `;`. You push a list containing the function's code, followed by a string for its name, and call `def`.
+
+**Syntax:**
+
+Plaintext```
+[ body ] "function_name" def
+
+```
+
+**Example: A Recursive Factorial Function**
+
+```plaintext
+[ 
+  dup 1 = 
+  [ dup 1 - factorial * ]  // False branch: n * factorial(n-1)
+  [ 1 ]                    // True branch: return 1
+  if 
+] "factorial" def
 ```
 
 ## ⚙️ Under the Hood (Design Choices)
@@ -70,18 +136,32 @@ The execution context (`tfctx`) holds a dynamic array of registered functions. E
 1. A function pointer to native C code (e.g., basicMathFunctions).
 2. A pointer to a tfobj List containing user-defined ToyForth code.
 
+
+
+## Architecture Notes
+
+- Memory Safety: The core uses a Tagged Union (tfobj) with a strict reference-counting mechanism (retain / release) to prevent memory leaks during recursive list execution.
+- Immutability: Native math operations do not mutate objects in-place; they consume the operands and push newly allocated result objects to maintain a safe global state.
+
+
 ## 🚀 How to Build and Run
 
 A simple `Makefile` is used to compile the project.
 
-Bash```
-# Compile the executable
-make toyforth.exe
 
+# Compile the executable
+
+```bash
+make toyforth.exe
+```
 # Examples
 in the repository there is an example of a factorial function, that works by recursion. Change the number in the program
 
 
 # Run a ToyForth script
+
+```bash
 ./toyforth.exe my_program.tf
+```
+
 
