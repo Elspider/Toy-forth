@@ -172,7 +172,7 @@ tfobj *compile(char *prg);
  * list with just an element contained to the element itself*/
 int executeList(tfctx *ctx, tfobj *prg);
 
-/*-----TF function forwars declaration -------*/
+/*-----TF function forward declaration -------*/
 int basicMathFunctions(tfctx *ctx, tfobj *name);
 int executeListInContext(tfctx *ctx, tfobj *name);
 /*If statment take 2 list from the stack, 
@@ -186,6 +186,13 @@ int ifStatement(tfctx *ctx, tfobj *name);
 /*Push in the list the last element in the stack and increase his refcount*/
 int duplication(tfctx *ctx, tfobj *name);
 int basicMathComparision(tfctx *ctx, tfobj *name);
+
+/*print last object in the stack*/
+int printobj(tfctx *ctx, tfobj *name);
+
+/*print whole stack*/
+
+int printstack(tfctx *ctx, tfobj *name);
 
 /*===============Function Implementation=======================*/
 /*-------------Memory managment function---------*/
@@ -277,7 +284,7 @@ tfobj *listPop(tfobj *list){
 /*This function return the last element on the list.
  * if the object is stored, it must be retained by the caller
  * This is made to allow rapid inline comparison*/
- //TODO: Add an offset option to the command?
+ //TODO: Add an offset option to the function?
 tfobj *listPeek(tfobj *list){
 	tfobj *o = list->list.elem[list->list.len - 1 ];
 	return o;
@@ -612,6 +619,15 @@ int duplication(tfctx *ctx, tfobj *name){
 	return ctx->error;
 }
 
+int printobj(tfctx *ctx, tfobj *name){
+	dumpobj(ctxStackPeek(ctx, TFOBJ_TYPE_INT));
+	if(ctx->error == TFERR_TYPE) ctx->error = TFERR_OK;
+	return ctx->error;
+}
+int printstack(tfctx *ctx, tfobj *name){
+	dumpobj(ctx->stack);
+	return ctx->error;
+}
 /*------------Control structure----------*/
 
 /*If statment take 2 list from the stack, 
