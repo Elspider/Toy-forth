@@ -36,9 +36,10 @@ Unlike traditional Forth, ToyForth uses a more functional approach for condition
 
 Functions are defined by pushing a list of instructions, followed by a string representing the function name, and calling `def`.
 
-Plaintext```
+```text
 [ dup * ] "square" def
 5 square sprint  // Output: [25]
+```
 
 ## ⚙️ Under the Hood (Design Choices)
 
