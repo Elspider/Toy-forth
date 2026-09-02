@@ -196,6 +196,8 @@ int printstack(tfctx *ctx, tfobj *name);
 
 /*define user-function*/
 int defineFunction(tfctx *ctx, tfobj *name);
+/*delete last element from stack */
+int tfdrop(tfctx *ctx, tfobj *name);
 
 /*===============Function Implementation=======================*/
 /*-------------Memory managment function---------*/
@@ -483,6 +485,7 @@ tfctx *createContext(){
 	registerCFunction(ctx, "print", printobj);
 	registerCFunction(ctx, "sprint", printstack);
 	registerCFunction(ctx, "def", defineFunction);
+	registerCFunction(ctx, "drop", tfdrop);
 	return ctx;
 }
 void deleteContext(tfctx *ctx){
@@ -645,6 +648,12 @@ int printobj(tfctx *ctx, tfobj *name){
 }
 int printstack(tfctx *ctx, tfobj *name){
 	dumpobj(ctx->stack);
+	return ctx->error;
+}
+int tfdrop(tfctx *ctx, tfobj *name){
+	tfobj *o = ctxStackPop(ctx, TFOBJ_TYPE_INT);
+	if(ctx->error == TFERR_TYPE) ctx->error = TFERR_OK;
+	relese(o);
 	return ctx->error;
 }
 /*------------Control structure----------*/
