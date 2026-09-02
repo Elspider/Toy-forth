@@ -194,6 +194,9 @@ int printobj(tfctx *ctx, tfobj *name);
 
 int printstack(tfctx *ctx, tfobj *name);
 
+/*define user-function*/
+int defineFunction(tfctx *ctx, tfobj *name);
+
 /*===============Function Implementation=======================*/
 /*-------------Memory managment function---------*/
 void deleteObject(tfobj *o){
@@ -277,8 +280,10 @@ tfobj *listPop(tfobj *list){
 	o = list->list.elem[list->list.len];
 	list->list.elem[list->list.len] = NULL;
 	//Check if list is mostly empty
-	if(list->list.max_capacity > 4 * list->list.len && list->list.len != 0)
+	if(list->list.max_capacity > 4 * list->list.len && list->list.len != 0){
 		list->list.elem = xrealloc(list->list.elem , sizeof(tfobj*) * list->list.len);
+		list->list.max_capacity = list->list.len;
+	}
 	return o;
 }
 /*This function return the last element on the list.
@@ -450,6 +455,8 @@ void registerCFunction(tfctx *ctx, char *name, int (*callback)(tfctx *ctx, tfobj
 	fe->callback = callback;
 	relese(oname);
 }
+
+
 /*==============Context and execution===========*/
 
 
@@ -473,6 +480,9 @@ tfctx *createContext(){
 	registerCFunction(ctx, "if", ifStatement);
 	registerCFunction(ctx, "exec", executeListInContext);
 	registerCFunction(ctx, "dup", duplication);
+	registerCFunction(ctx, "print", printobj);
+	registerCFunction(ctx, "sprint", printstack);
+	registerCFunction(ctx, "def", defineFunction);
 	return ctx;
 }
 void deleteContext(tfctx *ctx){
@@ -614,12 +624,21 @@ int basicMathComparision(tfctx *ctx, tfobj *name){
 
 }
 int duplication(tfctx *ctx, tfobj *name){
+	if(!checkStackLen(ctx, 1)){
+		ctx->error = TFERR_UNDERFLOW;
+		return ctx->error;
+	}
+
 	tfobj *o = listPeek(ctx->stack);
 	listPush(o, ctx->stack);
 	return ctx->error;
 }
 
 int printobj(tfctx *ctx, tfobj *name){
+	if(!checkStackLen(ctx, 1)){
+		ctx->error = TFERR_UNDERFLOW;
+		return ctx->error;
+	}
 	dumpobj(ctxStackPeek(ctx, TFOBJ_TYPE_INT));
 	if(ctx->error == TFERR_TYPE) ctx->error = TFERR_OK;
 	return ctx->error;
@@ -630,6 +649,22 @@ int printstack(tfctx *ctx, tfobj *name){
 }
 /*------------Control structure----------*/
 
+int defineFunction(tfctx *ctx, tfobj *name){
+	if(!checkStackLen(ctx, 2)){
+		ctx->error = TFERR_UNDERFLOW;
+		return ctx->error;
+	}
+	tfobj *funcname = ctxStackPop(ctx, TFOBJ_TYPE_STR);
+	tfobj *list = ctxStackPop(ctx, TFOBJ_TYPE_LIST);
+	if(ctx->error == TFERR_OK){
+		FuncEntry *userEntry = registerFunction(ctx, funcname, F_TYPE_USER);
+		userEntry->userList = list;
+		retain(list);
+	}
+	relese(funcname);
+	relese(list);
+	return ctx->error;
+}
 /*If statment take 2 list from the stack, 
  * And execute one before the if is the third element
  * from the stack is true, the second last if it is false.
@@ -637,7 +672,7 @@ int printstack(tfctx *ctx, tfobj *name){
  * are threated ast std c where 0 == FALSE and non 0 == TRUE
  * */
 int ifStatement(tfctx *ctx, tfobj *name){
-if(!checkStackLen(ctx, 3)){
+	if(!checkStackLen(ctx, 3)){
 		ctx->error = TFERR_UNDERFLOW;
 		return ctx->error;
 	}
@@ -662,6 +697,7 @@ void executeSymbol(tfctx *ctx, tfobj *name){
 	FuncEntry *fe = getFunctionEntry(ctx, name);
 	if(fe == NULL){
 		ctx->error = TFERR_NOFUNC;
+		return;
 	}
 
 	switch(fe->type){
@@ -710,7 +746,7 @@ void executeProgram(tfctx *ctx, tfobj *prg){
 			fprintf(stderr,"Error: Wrong type for function \n"); 
 			break;
 		case TFERR_UNDERFLOW:
-			fprintf(stderr, "Error: Missing argumen for function \n");
+			fprintf(stderr, "Error: Missing argument for function \n");
 			break;
 		case TFERR_OK:
 			printf("Execution of the program did not produce any error\n");
