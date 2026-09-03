@@ -92,6 +92,8 @@ void *xrealloc(void * old, size_t size){
 
 /*--------------------Object related function------------------------------*/
 
+void printStringObject(tfobj *o);
+
 /*Allocate and initialize a new toyfoth object*/
 tfobj *createObject(int type){
 	tfobj *o = xmalloc(sizeof(tfobj));
@@ -145,10 +147,11 @@ void dumpobj(tfobj *o){
 			printf("%d ", o->num);
 			break;
 		case TFOBJ_TYPE_SYMBOL:
-			printf("%s ",o->str.ptr);
+			printf("%s ", o->str.ptr);
 			break;
 		case TFOBJ_TYPE_STR:
-			printf("\"%s\" ",o->str.ptr);
+			printStringObject(o);
+			putchar(' ');
 			break;
 		case TFOBJ_TYPE_LIST:
 			putchar('[');
@@ -162,7 +165,7 @@ void dumpobj(tfobj *o){
 }
 /*===============Necessary forward declaration==================*/
 void deleteObject(tfobj *o);
-void relese(tfobj *o);
+void realease(tfobj *o);
 void retain(tfobj *o);
 int isSymbolChar(int c);
 /*Turn a null-terminated buffer into a List
@@ -232,7 +235,7 @@ void deleteObject(tfobj *o){
 		case TFOBJ_TYPE_LIST:
 			for(size_t j = 0; j < o->list.len; j++){
 				current = o->list.elem[j];
-				relese(current);
+				realease(current);
 			}
 			free(o->list.elem);
 			break;
@@ -245,7 +248,7 @@ void retain(tfobj *o){
 	assert(o->refcount > 0);
 	o->refcount++;
 }
-void relese(tfobj *o){
+void realease(tfobj *o){
 	assert(o->refcount > 0);
 	o->refcount--;
 	if(o->refcount == 0) deleteObject(o);
@@ -254,7 +257,7 @@ void relese(tfobj *o){
 
 /*This function use memcmp on the string
  * of 2 object, and return 0 if two string object 
- * have the same string, 1 if the first string is greather
+ * have two same string, 1 if the first string is greather
  * than the second according to memcmp() and -1 if 
  * the second is. 
  * If one string is an exact prefixe of another, meaning it is 
@@ -284,6 +287,19 @@ tfobj *stringSum(tfobj *obj1, tfobj *obj2){
 	result = createStringObject(buf, obj1->str.len + obj2->str.len);
 	free(buf);
 	return result;
+}
+/*This function is used to print a string in a binary safe way
+ * WARNING: Function does not check object type*/
+void printStringObject(tfobj *o){
+	putchar('\"');
+	for(int j = 0; j < o->str.len; j++){
+	putchar(o->str.ptr[j]);
+	if(o->str.ptr[j] == 0){
+		putchar('/');
+		putchar('0');
+	}
+	}
+	putchar('\"');
 }
 /* -----------List object function-------------*/
 
@@ -326,7 +342,7 @@ tfobj *listPeek(tfobj *list){
 /*------------Parsing Related function----------*/
 int isSymbolChar(int c){
 	if(c == 0) return 0;
-	char buf[] = "+-*/%<>=";
+	char buf[] = "+-*/%<>=!";
 	return ( 
 			(strchr(buf, c) != NULL) ||
 			 isalpha(c) );
@@ -436,12 +452,12 @@ tfobj *compile(char *prg){
 		//appending the object
 		if(o == NULL){
 			fprintf(stderr,"Sintax error at %s", startToken);
-			relese(parsed);
+			realease(parsed);
 			return NULL;
 		}
 		else{
 			listPush(o, parsed);
-			relese(o);
+			realease(o);
 		}
 	}
 	return parsed;
@@ -474,14 +490,14 @@ void registerCFunction(tfctx *ctx, char *name, int (*callback)(tfctx *ctx, tfobj
 	if(fe != NULL){
 		//Overwriting other function
 		if (fe->type == F_TYPE_USER) {
-			relese(fe->userList);
+			realease(fe->userList);
 			fe->userList = NULL;
 		}
 	}else{
 		fe = registerFunction(ctx, oname, F_TYPE_NATIVE);
 	}
 	fe->callback = callback;
-	relese(oname);
+	realease(oname);
 }
 
 
@@ -520,13 +536,13 @@ tfctx *createContext(){
 }
 void deleteContext(tfctx *ctx){
 	FuncEntry *curr;
-	relese(ctx->stack);
+	realease(ctx->stack);
 	ctx->stack = NULL;
 	for(size_t j = 0; j < ctx->func_table.len; j++){
 		curr = ctx->func_table.elem[j];
 		if(curr->type == F_TYPE_USER)
-			relese(curr->userList);
-		relese(curr->name);
+			realease(curr->userList);
+		realease(curr->name);
 		free(curr);
 	}
 	free(ctx->func_table.elem);
@@ -537,7 +553,12 @@ void deleteContext(tfctx *ctx){
  * the reference count*/
 tfobj *ctxStackPop(tfctx *ctx, int type){
 	tfobj *o = listPop(ctx->stack);
-	if(o->type != type) {ctx->error = TFERR_TYPE; printf("error popping: %d, expected %d\n", o->type, type);}
+	if(o->type != type) {
+		ctx->error = TFERR_TYPE; 
+#ifdef debug
+		printf("error popping: %d, expected %d\n", o->type, type);
+#endif
+	}
 	return o;
 }
 /*return the last element from the context
@@ -580,18 +601,19 @@ int basicMathFunctions(tfctx *ctx, tfobj *name){
 		}
 		o = createIntObject(res);
 		ctxStackPush(ctx, o);
-		relese(o);
+		realease(o);
 	}
 
-//TODO: Maybe adding an option to sum string?
 	else if( a->type == TFOBJ_TYPE_STR && b->type == TFOBJ_TYPE_STR){
 		switch(name->str.ptr[0]){
 		case '+': o = stringSum(a, b);break;
 		default: ctx->error = TFERR_TYPE;break;
 		}
+		ctxStackPush(ctx, o);
+		realease(o);
 	}
-	relese(a);
-	relese(b);
+	realease(a);
+	realease(b);
 	return ctx->error;
 }
 
@@ -606,7 +628,7 @@ int executeListInContext(tfctx *ctx, tfobj *name){
 	if(ctx->error == TFERR_OK){
 		executeList(ctx, list);
 	}
-	relese(list);
+	realease(list);
 	return ctx->error;
 }
 
@@ -649,24 +671,26 @@ int basicMathComparision(tfctx *ctx, tfobj *name){
 	else if (a->type == TFOBJ_TYPE_STR && b->type == TFOBJ_TYPE_STR){
 		ctx->error = TFERR_OK;
 		int value = stringObjCompare(a, b);
-		res = 0;
 		if(name->str.ptr[0] == '>'){
 			if(value == 1) res = 1;
 		}
 		if(name->str.ptr[0] == '<'){
 			if(value == -1) res = 1;
 		}
-		if(name->str.ptr[0] == '=' || name->str.ptr[1] == '='){
+		if(name->str.ptr[0] == '!'){
+			if(value != 0) res = 1;
+		}
+		else if(name->str.ptr[0] == '=' || name->str.ptr[1] == '='){
 			if(value == 0) res = 1;
 		}
 	}
 	if(ctx->error == TFERR_OK){
 		tfobj *o = createBoolObject(res);
 		ctxStackPush(ctx, o);
-		relese(o);
+		realease(o);
 	}
-	relese(a);
-	relese(b);
+	realease(a);
+	realease(b);
 	return ctx->error;
 
 }
@@ -697,7 +721,7 @@ int printstack(tfctx *ctx, tfobj *name){
 int tfdrop(tfctx *ctx, tfobj *name){
 	tfobj *o = ctxStackPop(ctx, TFOBJ_TYPE_INT);
 	if(ctx->error == TFERR_TYPE) ctx->error = TFERR_OK;
-	relese(o);
+	realease(o);
 	return ctx->error;
 }
 /*------------Control structure----------*/
@@ -714,8 +738,8 @@ int defineFunction(tfctx *ctx, tfobj *name){
 		userEntry->userList = list;
 		retain(list);
 	}
-	relese(funcname);
-	relese(list);
+	realease(funcname);
+	realease(list);
 	return ctx->error;
 }
 /*If statment take 2 list from the stack, 
@@ -738,10 +762,10 @@ int ifStatement(tfctx *ctx, tfobj *name){
 		if(statment->type == TFOBJ_TYPE_INT) ctx->error = TFERR_OK;
 		if(statment->num) executeList(ctx, truestat);
 		else executeList(ctx, falsestat);
-		relese(statment);
+		realease(statment);
 	}
-	relese(truestat);
-	relese(falsestat);
+	realease(truestat);
+	realease(falsestat);
 	return ctx->error;
 }
 int for_cycle(tfctx *ctx, tfobj *name){
@@ -755,8 +779,8 @@ int for_cycle(tfctx *ctx, tfobj *name){
 		for(int i = 0; i < num->num; i++)
 			executeList(ctx, list);
 	}
-	relese(list);
-	relese(num);
+	realease(list);
+	realease(num);
 	return ctx->error;
 }
 int while_cycle(tfctx *ctx, tfobj *name){
@@ -769,7 +793,7 @@ int while_cycle(tfctx *ctx, tfobj *name){
 	tfobj *condition = NULL;
 	if(ctx->error == TFERR_OK){
 iteration:
-			if(condition != NULL) relese(condition);
+			if(condition != NULL) realease(condition);
 			executeList(ctx, con_list);
 			condition = ctxStackPop(ctx, TFOBJ_TYPE_BOOL);
 
@@ -783,9 +807,9 @@ iteration:
 		}
 	}
 cleanup:
-	if(condition) relese(condition);
-	relese(it_list);
-	relese(con_list);
+	if(condition) realease(condition);
+	realease(it_list);
+	realease(con_list);
 	return ctx->error;
 }
 /*----------Execution related function------------*/
@@ -894,7 +918,7 @@ int main(int argc, char **argv){
 	dumpobj(ctx->stack);
 	putchar('\n');
 #endif
-	relese(prg);
+	realease(prg);
 	deleteContext(ctx);
 	return 0;
 }
