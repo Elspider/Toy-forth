@@ -117,13 +117,14 @@ Recursion is also supported:
 ```plaintext
 [ 
   dup 1 = 
-  [ dup 1 - factorial * ]  // False branch: n * factorial(n-1)
-  [ 1 ]                    // True branch: return 1
+  [ dup 1 - factorial * ]  # False branch: n * factorial(n-1)
+  [ 1 ]                    # True branch: return 1
   if 
 ] "factorial" def
 ```
 You can also find an implementation of this function in the file at factorial.tf
 
+Note: Inline comment are supported with '#'
 ## ⚙️ Under the Hood (Design Choices)
 
 ### 1. Unified Execution Engine

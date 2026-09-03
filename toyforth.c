@@ -5,7 +5,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <assert.h>
-//#define debug
+#define debug
 /*Definition of object type*/
 #define TFOBJ_TYPE_INT 0
 #define TFOBJ_TYPE_STR 1
@@ -50,6 +50,7 @@ typedef struct tfobj{
 typedef struct tfparser{
 	char *prg; //the program to compile into a list. It is alwais null-termineted
 	char *p; //the next token to parse
+	int isComment;
 }tfparser;
 typedef struct funcEntry{
 	tfobj* name;
@@ -422,6 +423,12 @@ tfobj *parseSymbol(tfparser *p){
 void parseSpace(tfparser *p){
 	while(isspace(p->p[0])) p->p++;
 }
+void parseComment(tfparser *p){
+	p->isComment = 1;
+	while(p->p[0] != 0 && p->p[0] != '\n'){
+		p->p++;
+	}
+}
 /*parse the string containing program and 
  * return it as a Toyforth List*/
 tfobj *compile(char *prg){
@@ -430,9 +437,9 @@ tfobj *compile(char *prg){
 	parser.p = parser.prg = prg;
 	char *startToken;
 	tfobj *o = NULL;
-	
 
 	while(parser.p[0]){
+		parser.isComment = 0;
 		parseSpace(&parser);
 		if(parser.p[0] == 0) break;
 		startToken = parser.p;
@@ -451,18 +458,16 @@ tfobj *compile(char *prg){
 		}
 		//Parse comment
 		else if(parser.p[0] == '#'){
-			while(parser.p[0] != '\0' && parser.p[0] != '\n'){
-				parser.p++;
-			}
+			parseComment(&parser);
 		}
 		else o = NULL;
 		//appending the object
-		if(o == NULL){
+		if(o == NULL && parser.isComment == 0){
 			fprintf(stderr,"Syntax error at %s", startToken);
 			release(parsed);
 			return NULL;
 		}
-		else{
+		else if(parser.isComment == 0){
 			listPush(o, parsed);
 			release(o);
 		}
