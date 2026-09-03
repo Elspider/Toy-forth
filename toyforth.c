@@ -5,7 +5,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <assert.h>
-#define debug
+//#define debug
 /*Definition of object type*/
 #define TFOBJ_TYPE_INT 0
 #define TFOBJ_TYPE_STR 1
@@ -619,6 +619,7 @@ int basicMathFunctions(tfctx *ctx, tfobj *name){
 	}
 
 	else if( a->type == TFOBJ_TYPE_STR && b->type == TFOBJ_TYPE_STR){
+		ctx->error = TFERR_OK;
 		switch(name->str.ptr[0]){
 		case '+': o = stringSum(a, b);break;
 		default: ctx->error = TFERR_TYPE;break;

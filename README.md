@@ -54,7 +54,7 @@ ToyForth uses **Postfix (Reverse Polish) Notation**. You push operands onto the 
 The interpreter supports standard integer arithmetic and comparison.
 
 - Math: +, -, \*, /, %Example:``` 10 5 - ```(Leaves 5 on the stack).
-- Comparison: =, >, <, >=, <=Example:``` 10 10 = ```(Leaves True on the stack). Note: string comparison using this operator is a WIP.
+- Comparison: =, >, <, >=, <=Example:``` 10 10 = ```(Leaves True on the stack). Note: string comparison and addition is also suppoted!
 
 ### Stack Manipulation & I/O
 
