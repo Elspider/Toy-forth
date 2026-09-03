@@ -105,7 +105,7 @@ tfobj *createObject(int type){
 /*The following functions allocate different kind of ToyFort Object*/
 tfobj *createStringObject(char *s, size_t len){
 	tfobj *o = createObject(TFOBJ_TYPE_STR);
-	o->str.ptr = xmalloc(len);
+	o->str.ptr = xmalloc(len+1);
 	memcpy(o->str.ptr,s,len);
 	o->str.ptr[len] = 0;
 	o->str.len = len;
@@ -165,7 +165,7 @@ void dumpobj(tfobj *o){
 }
 /*===============Necessary forward declaration==================*/
 void deleteObject(tfobj *o);
-void realease(tfobj *o);
+void release(tfobj *o);
 void retain(tfobj *o);
 int isSymbolChar(int c);
 /*Turn a null-terminated buffer into a List
@@ -200,7 +200,8 @@ int printstack(tfctx *ctx, tfobj *name);
 /*define user-function*/
 int defineFunction(tfctx *ctx, tfobj *name);
 /*delete last element from stack */
-int tfdrop(tfctx *ctx, tfobj *name);
+int tfDrop(tfctx *ctx, tfobj *name);
+int tfSwap(tfctx *ctx, tfobj *name);
 
 /*----loop function---*/
 /*For cycle pop a list and an a number N execute N 
@@ -235,7 +236,7 @@ void deleteObject(tfobj *o){
 		case TFOBJ_TYPE_LIST:
 			for(size_t j = 0; j < o->list.len; j++){
 				current = o->list.elem[j];
-				realease(current);
+				release(current);
 			}
 			free(o->list.elem);
 			break;
@@ -248,7 +249,7 @@ void retain(tfobj *o){
 	assert(o->refcount > 0);
 	o->refcount++;
 }
-void realease(tfobj *o){
+void release(tfobj *o){
 	assert(o->refcount > 0);
 	o->refcount--;
 	if(o->refcount == 0) deleteObject(o);
@@ -448,16 +449,22 @@ tfobj *compile(char *prg){
 		else if(isSymbolChar(parser.p[0])){
 			o = parseSymbol(&parser);
 		}
+		//Parse comment
+		else if(parser.p[0] == '#'){
+			while(parser.p[0] != '\0' && parser.p[0] != '\n'){
+				parser.p++;
+			}
+		}
 		else o = NULL;
 		//appending the object
 		if(o == NULL){
-			fprintf(stderr,"Sintax error at %s", startToken);
-			realease(parsed);
+			fprintf(stderr,"Syntax error at %s", startToken);
+			release(parsed);
 			return NULL;
 		}
 		else{
 			listPush(o, parsed);
-			realease(o);
+			release(o);
 		}
 	}
 	return parsed;
@@ -490,14 +497,14 @@ void registerCFunction(tfctx *ctx, char *name, int (*callback)(tfctx *ctx, tfobj
 	if(fe != NULL){
 		//Overwriting other function
 		if (fe->type == F_TYPE_USER) {
-			realease(fe->userList);
+			release(fe->userList);
 			fe->userList = NULL;
 		}
 	}else{
 		fe = registerFunction(ctx, oname, F_TYPE_NATIVE);
 	}
 	fe->callback = callback;
-	realease(oname);
+	release(oname);
 }
 
 
@@ -511,6 +518,7 @@ tfctx *createContext(){
 	ctx->func_table.len = 0;
 	ctx->func_table.elem = NULL;
 	ctx->error = TFERR_OK;
+	//*Adding standard library function
 	registerCFunction(ctx, "+", basicMathFunctions);
 	registerCFunction(ctx, "-", basicMathFunctions);
 	registerCFunction(ctx, "*", basicMathFunctions);
@@ -528,21 +536,22 @@ tfctx *createContext(){
 	registerCFunction(ctx, "print", printobj);
 	registerCFunction(ctx, "sprint", printstack);
 	registerCFunction(ctx, "def", defineFunction);
-	registerCFunction(ctx, "drop", tfdrop);
+	registerCFunction(ctx, "drop", tfDrop);
 	registerCFunction(ctx, "for", for_cycle);
 	registerCFunction(ctx, "while", while_cycle);
+	registerCFunction(ctx, "swap", tfSwap);
 
 	return ctx;
 }
 void deleteContext(tfctx *ctx){
 	FuncEntry *curr;
-	realease(ctx->stack);
+	release(ctx->stack);
 	ctx->stack = NULL;
 	for(size_t j = 0; j < ctx->func_table.len; j++){
 		curr = ctx->func_table.elem[j];
 		if(curr->type == F_TYPE_USER)
-			realease(curr->userList);
-		realease(curr->name);
+			release(curr->userList);
+		release(curr->name);
 		free(curr);
 	}
 	free(ctx->func_table.elem);
@@ -601,7 +610,7 @@ int basicMathFunctions(tfctx *ctx, tfobj *name){
 		}
 		o = createIntObject(res);
 		ctxStackPush(ctx, o);
-		realease(o);
+		release(o);
 	}
 
 	else if( a->type == TFOBJ_TYPE_STR && b->type == TFOBJ_TYPE_STR){
@@ -610,10 +619,10 @@ int basicMathFunctions(tfctx *ctx, tfobj *name){
 		default: ctx->error = TFERR_TYPE;break;
 		}
 		ctxStackPush(ctx, o);
-		realease(o);
+		release(o);
 	}
-	realease(a);
-	realease(b);
+	release(a);
+	release(b);
 	return ctx->error;
 }
 
@@ -628,7 +637,7 @@ int executeListInContext(tfctx *ctx, tfobj *name){
 	if(ctx->error == TFERR_OK){
 		executeList(ctx, list);
 	}
-	realease(list);
+	release(list);
 	return ctx->error;
 }
 
@@ -687,10 +696,10 @@ int basicMathComparision(tfctx *ctx, tfobj *name){
 	if(ctx->error == TFERR_OK){
 		tfobj *o = createBoolObject(res);
 		ctxStackPush(ctx, o);
-		realease(o);
+		release(o);
 	}
-	realease(a);
-	realease(b);
+	release(a);
+	release(b);
 	return ctx->error;
 
 }
@@ -718,10 +727,24 @@ int printstack(tfctx *ctx, tfobj *name){
 	dumpobj(ctx->stack);
 	return ctx->error;
 }
-int tfdrop(tfctx *ctx, tfobj *name){
-	tfobj *o = ctxStackPop(ctx, TFOBJ_TYPE_INT);
-	if(ctx->error == TFERR_TYPE) ctx->error = TFERR_OK;
-	realease(o);
+int tfDrop(tfctx *ctx, tfobj *name){
+	if(!checkStackLen(ctx, 1)){
+		ctx->error = TFERR_UNDERFLOW;
+		return ctx->error;
+	}
+	tfobj *o = listPop(ctx->stack);
+	release(o);
+	return ctx->error;
+}
+int tfSwap(tfctx *ctx, tfobj *name){
+	if(!checkStackLen(ctx, 2)){
+		ctx->error = TFERR_UNDERFLOW;
+		return ctx->error;
+	}
+	tfobj * temp;
+	temp = listPeek(ctx->stack);
+	ctx->stack->list.elem[ctx->stack->list.len - 1] = ctx->stack->list.elem[ctx->stack->list.len - 2];
+	ctx->stack->list.elem[ctx->stack->list.len - 2] = temp;
 	return ctx->error;
 }
 /*------------Control structure----------*/
@@ -738,8 +761,8 @@ int defineFunction(tfctx *ctx, tfobj *name){
 		userEntry->userList = list;
 		retain(list);
 	}
-	realease(funcname);
-	realease(list);
+	release(funcname);
+	release(list);
 	return ctx->error;
 }
 /*If statment take 2 list from the stack, 
@@ -762,10 +785,10 @@ int ifStatement(tfctx *ctx, tfobj *name){
 		if(statment->type == TFOBJ_TYPE_INT) ctx->error = TFERR_OK;
 		if(statment->num) executeList(ctx, truestat);
 		else executeList(ctx, falsestat);
-		realease(statment);
+		release(statment);
 	}
-	realease(truestat);
-	realease(falsestat);
+	release(truestat);
+	release(falsestat);
 	return ctx->error;
 }
 int for_cycle(tfctx *ctx, tfobj *name){
@@ -779,8 +802,8 @@ int for_cycle(tfctx *ctx, tfobj *name){
 		for(int i = 0; i < num->num; i++)
 			executeList(ctx, list);
 	}
-	realease(list);
-	realease(num);
+	release(list);
+	release(num);
 	return ctx->error;
 }
 int while_cycle(tfctx *ctx, tfobj *name){
@@ -793,8 +816,13 @@ int while_cycle(tfctx *ctx, tfobj *name){
 	tfobj *condition = NULL;
 	if(ctx->error == TFERR_OK){
 iteration:
-			if(condition != NULL) realease(condition);
+			if(condition != NULL) release(condition);
 			executeList(ctx, con_list);
+
+			if(!checkStackLen(ctx, 1)){
+				ctx->error = TFERR_UNDERFLOW;
+				return ctx->error;
+			}
 			condition = ctxStackPop(ctx, TFOBJ_TYPE_BOOL);
 
 			if(condition->type == TFOBJ_TYPE_INT) ctx->error = TFERR_OK;
@@ -807,9 +835,9 @@ iteration:
 		}
 	}
 cleanup:
-	if(condition) realease(condition);
-	realease(it_list);
-	realease(con_list);
+	if(condition) release(condition);
+	release(it_list);
+	release(con_list);
 	return ctx->error;
 }
 /*----------Execution related function------------*/
@@ -879,12 +907,16 @@ void executeProgram(tfctx *ctx, tfobj *prg){
 /*=======Main========*/
 int main(int argc, char **argv){
 	if(argc !=2){
-		fprintf(stderr,"Badly written request\n usage: %s <filename>\n",argv[0]);
+		fprintf(stderr,"Badly written request:\n usage: %s <filename>\n",argv[0]);
 		return 1;
 	}
 	//Read the file into prgtext
 	FILE *testfile;
 	testfile = fopen(argv[1], "r");
+	if(testfile == NULL){
+		fprintf(stderr, "Invalid file selected\n");
+		return 1;
+	}
 	fseek(testfile, 0, SEEK_END);
 	long file_size = ftell(testfile);
 	printf("file size: %lu\n", file_size);
@@ -892,10 +924,6 @@ int main(int argc, char **argv){
 	fseek(testfile, 0, SEEK_SET);
 	fread(prgtext, file_size, 1, testfile);
 	prgtext[file_size] = 0;
-	if(testfile == NULL){
-		fprintf(stderr, "Invalid file selected\n");
-		return 1;
-	}
 	fclose(testfile);
 #ifdef debug
 	printf("\"%s\"\n",prgtext);
@@ -918,7 +946,7 @@ int main(int argc, char **argv){
 	dumpobj(ctx->stack);
 	putchar('\n');
 #endif
-	realease(prg);
+	release(prg);
 	deleteContext(ctx);
 	return 0;
 }
