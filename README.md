@@ -43,18 +43,18 @@ ToyForth uses **Postfix (Reverse Polish) Notation**. You push operands onto the 
 
 ### Data Types
 
-- Integers: 42, -10
-- Strings: "Hello World"
-- Booleans: Produced by comparison operators. (Internally True / False).
-- Lists: [ 1 2 + ] (Used for code blocks and data structures).
+- Integers: ```42, -10```
+- Strings: ```"Hello World"```
+- Booleans: Produced by comparison operators. (Internally True / False), behave same way as integers
+- Lists: ```[ 1 2 + ] ```(Used for code blocks and data structures).
 - Symbols: +, dup, print (Executable words).
 
 ### Basic Math & Comparison
 
 The interpreter supports standard integer arithmetic and comparison.
 
-- Math: +, -, \*, /, %Example: 10 5 - (Leaves 5 on the stack).
-- Comparison: =, >, <, >=, <=Example: 10 10 = (Leaves True on the stack).Note: You can also compare strings using these operators!
+- Math: +, -, \*, /, %Example:``` 10 5 - ```(Leaves 5 on the stack).
+- Comparison: =, >, <, >=, <=Example:``` 10 10 = ```(Leaves True on the stack). Note: string comparison using this operator is a WIP.
 
 ### Stack Manipulation & I/O
 
@@ -85,16 +85,32 @@ The `if` statement in ToyForth expects three elements on the stack in the follow
 
 ```
 
+## Iterarion structure
+Both ```for``` and ```while``` structure exist in the lenguage
+
+- for structure takes as argument an integer n and a list, which will be iterated n times, so the statement look something like ```<number> [...code...] for ```
+**example:**
+
+```plaintext
+2 10 [ 2 *] for
+```
+- While structure is inspired by other lenguage such as postScript, and it need a condition list and a iteration list. The function first execute the condition list, then pop the last element from the stack, and see his logical value, and if it is true the iteration list get executed and so on```[...code...] [...condition...] while```
+**example:**
+
+```plaintext
+2 [3 *] [dup 100 <] while sprint
+```
 ## Defining User Functions (def)
 
 To keep the parser clean, ToyForth defines functions purely via stack operations instead of special keywords like `:` and `;`. You push a list containing the function's code, followed by a string for its name, and call `def`.
 
 **Syntax:**
 
-Plaintext```
+```
 [ body ] "function_name" def
 
 ```
+Recursion is also supported: 
 
 **Example: A Recursive Factorial Function**
 
@@ -106,6 +122,7 @@ Plaintext```
   if 
 ] "factorial" def
 ```
+You can also find an implementation of this function in the file at factorial.tf
 
 ## ⚙️ Under the Hood (Design Choices)
 
@@ -155,7 +172,7 @@ A simple `Makefile` is used to compile the project.
 make toyforth.exe
 ```
 # Examples
-in the repository there is an example of a factorial function, that works by recursion. Change the number in the program
+in the repository there is an example of a factorial function (as discussed before), that works by recursion. 
 
 
 # Run a ToyForth script

@@ -199,6 +199,21 @@ int defineFunction(tfctx *ctx, tfobj *name);
 /*delete last element from stack */
 int tfdrop(tfctx *ctx, tfobj *name);
 
+/*----loop function---*/
+/*For cycle pop a list and an a number N execute N 
+ * times the list
+ * <number> [...code...] for
+ * */
+int for_cycle(tfctx *ctx, tfobj *name);
+/*while cycle pop two list. first to be popped
+ * of them is the condition, second is the iteration list.
+ * The program execute the condition list, then pop the last
+ * value from the stack and if it is true the iteraration list
+ * get executed, then again the condition is cheked and so on
+ * [...code...] [...condition...] while
+ * */
+int while_cycle(tfctx *ctx, tfobj *name);
+
 /*===============Function Implementation=======================*/
 /*-------------Memory managment function---------*/
 void deleteObject(tfobj *o){
@@ -259,6 +274,17 @@ int stringObjCompare(tfobj *obj1, tfobj *obj2){
 	return res;
 }
 
+/*Create a new object by summing the two string object string
+ * WARNING: Function does not check object type*/
+tfobj *stringSum(tfobj *obj1, tfobj *obj2){
+	tfobj *result;
+	char *buf = xmalloc(obj1->str.len + obj2->str.len);
+	memcpy(buf, obj1->str.ptr, obj1->str.len);
+	memcpy(buf + obj1->str.len, obj2->str.ptr, obj2->str.len);
+	result = createStringObject(buf, obj1->str.len + obj2->str.len);
+	free(buf);
+	return result;
+}
 /* -----------List object function-------------*/
 
 /*Append an element to the list and hence
@@ -479,6 +505,7 @@ tfctx *createContext(){
 	registerCFunction(ctx, "<", basicMathComparision);
 	registerCFunction(ctx, ">=", basicMathComparision);
 	registerCFunction(ctx, "<=", basicMathComparision);
+	registerCFunction(ctx, "!=", basicMathComparision);
 	registerCFunction(ctx, "if", ifStatement);
 	registerCFunction(ctx, "exec", executeListInContext);
 	registerCFunction(ctx, "dup", duplication);
@@ -486,6 +513,9 @@ tfctx *createContext(){
 	registerCFunction(ctx, "sprint", printstack);
 	registerCFunction(ctx, "def", defineFunction);
 	registerCFunction(ctx, "drop", tfdrop);
+	registerCFunction(ctx, "for", for_cycle);
+	registerCFunction(ctx, "while", while_cycle);
+
 	return ctx;
 }
 void deleteContext(tfctx *ctx){
@@ -537,6 +567,7 @@ int basicMathFunctions(tfctx *ctx, tfobj *name){
 		ctx->error = TFERR_UNDERFLOW;
 		return ctx->error;
 	}
+	tfobj *o;
 	tfobj *b = ctxStackPop(ctx, TFOBJ_TYPE_INT);
 	tfobj *a = ctxStackPop(ctx, TFOBJ_TYPE_INT);
 	if(ctx->error == TFERR_OK){
@@ -547,12 +578,18 @@ int basicMathFunctions(tfctx *ctx, tfobj *name){
 			case '/': res = a->num / b->num; break;
 			case '%': res = a->num % b->num; break;
 		}
-		tfobj *o = createIntObject(res);
+		o = createIntObject(res);
 		ctxStackPush(ctx, o);
 		relese(o);
 	}
 
 //TODO: Maybe adding an option to sum string?
+	else if( a->type == TFOBJ_TYPE_STR && b->type == TFOBJ_TYPE_STR){
+		switch(name->str.ptr[0]){
+		case '+': o = stringSum(a, b);break;
+		default: ctx->error = TFERR_TYPE;break;
+		}
+	}
 	relese(a);
 	relese(b);
 	return ctx->error;
@@ -574,7 +611,7 @@ int executeListInContext(tfctx *ctx, tfobj *name){
 }
 
 int basicMathComparision(tfctx *ctx, tfobj *name){
-	int res;
+	int res = 0;
 	if(!checkStackLen(ctx, 2)){
 		ctx->error = TFERR_UNDERFLOW;
 		return ctx->error;
@@ -584,12 +621,6 @@ int basicMathComparision(tfctx *ctx, tfobj *name){
 	tfobj *a = ctxStackPop(ctx, TFOBJ_TYPE_INT);
 	//change simbol in case of <, to simplify cases
 	if(ctx->error == TFERR_OK){
-		if(name->str.ptr[0] == '<'){
-			tfobj *temp = a;
-			a = b;
-			b = temp;
-			name->str.ptr[0] = '>';
-		}
 		switch(name->str.ptr[0]){
 			case '=': res = a->num == b->num; break;
 			case '>':
@@ -598,8 +629,21 @@ int basicMathComparision(tfctx *ctx, tfobj *name){
 					case 0: res = a->num > b->num; break;
 					default: break;
 				}
+				break;
+			case '<':
+				switch (name->str.ptr[1]) {
+					case '=': res = a->num <= b->num; break;
+					case 0: res = a->num < b->num; break;
+					default: break;
+				}
+				break;
+			case '!': res = a->num != b->num; break;
+
 			default: break;
 		}
+#ifdef debug
+			printf("comparison result %d\n", res);
+#endif
 	}
 //String comparing, by using the function 
 	else if (a->type == TFOBJ_TYPE_STR && b->type == TFOBJ_TYPE_STR){
@@ -700,6 +744,50 @@ int ifStatement(tfctx *ctx, tfobj *name){
 	relese(falsestat);
 	return ctx->error;
 }
+int for_cycle(tfctx *ctx, tfobj *name){
+	if(!checkStackLen(ctx, 2)){
+		ctx->error = TFERR_UNDERFLOW;
+		return ctx->error;
+	}
+	tfobj *list = ctxStackPop(ctx, TFOBJ_TYPE_LIST);
+	tfobj *num = ctxStackPop(ctx, TFOBJ_TYPE_INT);
+	if(ctx->error == TFERR_OK){
+		for(int i = 0; i < num->num; i++)
+			executeList(ctx, list);
+	}
+	relese(list);
+	relese(num);
+	return ctx->error;
+}
+int while_cycle(tfctx *ctx, tfobj *name){
+	if(!checkStackLen(ctx, 2)){
+		ctx->error = TFERR_UNDERFLOW;
+		return ctx->error;
+	}
+	tfobj *con_list = ctxStackPop(ctx, TFOBJ_TYPE_LIST);
+	tfobj *it_list = ctxStackPop(ctx, TFOBJ_TYPE_LIST);
+	tfobj *condition = NULL;
+	if(ctx->error == TFERR_OK){
+iteration:
+			if(condition != NULL) relese(condition);
+			executeList(ctx, con_list);
+			condition = ctxStackPop(ctx, TFOBJ_TYPE_BOOL);
+
+			if(condition->type == TFOBJ_TYPE_INT) ctx->error = TFERR_OK;
+			if(ctx->error) goto cleanup;
+
+			if(condition->num){
+				executeList(ctx, it_list);
+				if(ctx->error == TFERR_OK) goto iteration;
+				else goto cleanup;
+		}
+	}
+cleanup:
+	if(condition) relese(condition);
+	relese(it_list);
+	relese(con_list);
+	return ctx->error;
+}
 /*----------Execution related function------------*/
 
 void executeSymbol(tfctx *ctx, tfobj *name){
@@ -758,7 +846,7 @@ void executeProgram(tfctx *ctx, tfobj *prg){
 			fprintf(stderr, "Error: Missing argument for function \n");
 			break;
 		case TFERR_OK:
-			printf("Execution of the program did not produce any error\n");
+			printf("\nExecution of the program did not produce any error\n");
 			break;
 		default: break;
 	}
@@ -795,15 +883,17 @@ int main(int argc, char **argv){
 			return 1;
 	}
 	free(prgtext);
+	printf("Starting stack:\t");
 	dumpobj(prg);
 	putchar('\n');
 
 	tfctx *ctx = createContext();
 	executeProgram(ctx, prg);
+#ifdef debug
 	printf("Program after execution\n");
 	dumpobj(ctx->stack);
 	putchar('\n');
-
+#endif
 	relese(prg);
 	deleteContext(ctx);
 	return 0;
