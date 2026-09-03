@@ -1,6 +1,6 @@
 # ToyForth
 
-ToyForth is a minimal, concatenative, stack-based toy programming language and interpreter written in C. It is designed as an educational project to explore memory management (reference counting), compiler architecture, and the mechanics of stack-based execution.
+ToyForth is a minimal, concatenative, turing complete stack-based toy programming language and interpreter written in C. It is designed as an educational project to explore memory management (reference counting), compiler architecture, and the mechanics of stack-based execution.
 
 Unlike traditional Forth, ToyForth heavily relies on lists `[ ... ]` and a purely functional approach to defining structures and user-functions, resembling a mix between Forth and PostScript.
 
